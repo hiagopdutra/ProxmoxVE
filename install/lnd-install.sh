@@ -29,54 +29,33 @@ TOR_RTL_SERVICE_DIR="/var/lib/tor/hidden_service_rtl"
 prompt_input() {
   local prompt="$1"
   local default_value="${2:-}"
-  local input_fd="/dev/stdin"
-  local output_fd="/dev/stderr"
-
-  if [[ -r /dev/tty ]]; then
-    input_fd="/dev/tty"
-    output_fd="/dev/tty"
-  fi
 
   if [[ -n "$default_value" ]]; then
-    printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}" >"$output_fd"
-    read -r PROMPT_RESULT <"$input_fd"
+    printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}"
+    read -r PROMPT_RESULT
     PROMPT_RESULT="${PROMPT_RESULT:-$default_value}"
   else
-    printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
-    read -r PROMPT_RESULT <"$input_fd"
+    printf "%s%s: " "${TAB3}" "${prompt}"
+    read -r PROMPT_RESULT
   fi
 }
 
 prompt_yes_no() {
   local prompt="$1"
   local default="${2:-N}"
-  local input_fd="/dev/stdin"
-  local output_fd="/dev/stderr"
 
-  if [[ -r /dev/tty ]]; then
-    input_fd="/dev/tty"
-    output_fd="/dev/tty"
-  fi
-
-  printf "%s%s <y/N> " "${TAB3}" "${prompt}" >"$output_fd"
-  read -r PROMPT_RESULT <"$input_fd"
+  printf "%s%s <y/N> " "${TAB3}" "${prompt}"
+  read -r PROMPT_RESULT
   PROMPT_RESULT="${PROMPT_RESULT:-$default}"
   [[ "${PROMPT_RESULT,,}" =~ ^(y|yes)$ ]]
 }
 
 prompt_secret() {
   local prompt="$1"
-  local input_fd="/dev/stdin"
-  local output_fd="/dev/stderr"
 
-  if [[ -r /dev/tty ]]; then
-    input_fd="/dev/tty"
-    output_fd="/dev/tty"
-  fi
-
-  printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
-  read -r -s PROMPT_RESULT <"$input_fd"
-  printf "\n" >"$output_fd"
+  printf "%s%s: " "${TAB3}" "${prompt}"
+  read -r -s PROMPT_RESULT
+  printf "\n"
 }
 
 trim_value() {
@@ -130,8 +109,9 @@ configure_defaults() {
 collect_install_settings() {
   configure_defaults
 
+  stop_spinner
   echo
-  msg_info "Collecting LND configuration"
+  echo -e "${INFO}${YW} Collecting LND configuration${CL}"
   prompt_input "LND alias" "$LND_ALIAS"
   LND_ALIAS=$(trim_value "$PROMPT_RESULT")
   prompt_input "Bitcoin network (mainnet/testnet/signet/regtest)" "$BITCOIN_NETWORK"
