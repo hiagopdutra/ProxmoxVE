@@ -30,14 +30,21 @@ prompt_input() {
   local prompt="$1"
   local default_value="${2:-}"
   local value
+  local input_fd="/dev/stdin"
+  local output_fd="/dev/stderr"
+
+  if [[ -r /dev/tty ]]; then
+    input_fd="/dev/tty"
+    output_fd="/dev/tty"
+  fi
 
   if [[ -n "$default_value" ]]; then
-    printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}" >&2
-    read -r value
+    printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}" >"$output_fd"
+    read -r value <"$input_fd"
     echo "${value:-$default_value}"
   else
-    printf "%s%s: " "${TAB3}" "${prompt}" >&2
-    read -r value
+    printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
+    read -r value <"$input_fd"
     echo "$value"
   fi
 }
@@ -46,9 +53,16 @@ prompt_yes_no() {
   local prompt="$1"
   local default="${2:-N}"
   local answer
+  local input_fd="/dev/stdin"
+  local output_fd="/dev/stderr"
 
-  printf "%s%s <y/N> " "${TAB3}" "${prompt}" >&2
-  read -r answer
+  if [[ -r /dev/tty ]]; then
+    input_fd="/dev/tty"
+    output_fd="/dev/tty"
+  fi
+
+  printf "%s%s <y/N> " "${TAB3}" "${prompt}" >"$output_fd"
+  read -r answer <"$input_fd"
   answer="${answer:-$default}"
   [[ "${answer,,}" =~ ^(y|yes)$ ]]
 }
@@ -56,9 +70,17 @@ prompt_yes_no() {
 prompt_secret() {
   local prompt="$1"
   local value
-  printf "%s%s: " "${TAB3}" "${prompt}" >&2
-  read -r -s value
-  printf "\n" >&2
+  local input_fd="/dev/stdin"
+  local output_fd="/dev/stderr"
+
+  if [[ -r /dev/tty ]]; then
+    input_fd="/dev/tty"
+    output_fd="/dev/tty"
+  fi
+
+  printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
+  read -r -s value <"$input_fd"
+  printf "\n" >"$output_fd"
   printf "%s" "$value"
 }
 
