@@ -502,6 +502,7 @@ SCB_EXPORT_FILE="${LND_DATA_DIR}/data/chain/bitcoin/${BITCOIN_NETWORK}/channel-a
 [[ -f "\$ENV_FILE" ]] && source "\$ENV_FILE"
 
 mkdir -p "\$LOCAL_BACKUP_DIR"
+chown -R lnd:lnd "\$LOCAL_BACKUP_DIR" >/dev/null 2>&1 || true
 
 init_git_repo() {
   [[ "\${SCB_BACKUP_MODE:-local}" == "git" ]] || return 0
