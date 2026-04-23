@@ -544,20 +544,36 @@ push_git_backup() {
 }
 
 backup_if_changed() {
-  local current_hash previous_hash
+  local current_hash previous_hash force_run="${1:-no}"
 
   [[ -f "\$SCB_SOURCE_FILE" ]] || return 0
 
   current_hash=\$(sha256sum "\$SCB_SOURCE_FILE" | awk '{print \$1}')
   previous_hash=\$(cat "\$STATE_FILE" 2>/dev/null || true)
 
-  if [[ "\$current_hash" != "\$previous_hash" ]]; then
+  if [[ "\$force_run" == "yes" || "\$current_hash" != "\$previous_hash" ]]; then
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel.backup"
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel-\$(date +%Y%m%d-%H%M%S).backup"
     printf '%s\n' "\$current_hash" >"\$STATE_FILE"
     push_git_backup
   fi
 }
+
+run_self_test() {
+  [[ -f "\$SCB_SOURCE_FILE" ]] || {
+    echo "SCB self-test failed: source backup file not found at \$SCB_SOURCE_FILE" >&2
+    exit 1
+  }
+
+  init_git_repo
+  backup_if_changed yes
+  echo "SCB self-test completed: forced backup snapshot created from \$SCB_SOURCE_FILE"
+}
+
+if [[ "\${1:-}" == "--self-test" ]]; then
+  run_self_test
+  exit 0
+fi
 
 init_git_repo
 backup_if_changed
