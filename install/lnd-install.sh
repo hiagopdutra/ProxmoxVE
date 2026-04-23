@@ -29,7 +29,6 @@ TOR_RTL_SERVICE_DIR="/var/lib/tor/hidden_service_rtl"
 prompt_input() {
   local prompt="$1"
   local default_value="${2:-}"
-  local value
   local input_fd="/dev/stdin"
   local output_fd="/dev/stderr"
 
@@ -40,19 +39,17 @@ prompt_input() {
 
   if [[ -n "$default_value" ]]; then
     printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}" >"$output_fd"
-    read -r value <"$input_fd"
-    echo "${value:-$default_value}"
+    read -r PROMPT_RESULT <"$input_fd"
+    PROMPT_RESULT="${PROMPT_RESULT:-$default_value}"
   else
     printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
-    read -r value <"$input_fd"
-    echo "$value"
+    read -r PROMPT_RESULT <"$input_fd"
   fi
 }
 
 prompt_yes_no() {
   local prompt="$1"
   local default="${2:-N}"
-  local answer
   local input_fd="/dev/stdin"
   local output_fd="/dev/stderr"
 
@@ -62,14 +59,13 @@ prompt_yes_no() {
   fi
 
   printf "%s%s <y/N> " "${TAB3}" "${prompt}" >"$output_fd"
-  read -r answer <"$input_fd"
-  answer="${answer:-$default}"
-  [[ "${answer,,}" =~ ^(y|yes)$ ]]
+  read -r PROMPT_RESULT <"$input_fd"
+  PROMPT_RESULT="${PROMPT_RESULT:-$default}"
+  [[ "${PROMPT_RESULT,,}" =~ ^(y|yes)$ ]]
 }
 
 prompt_secret() {
   local prompt="$1"
-  local value
   local input_fd="/dev/stdin"
   local output_fd="/dev/stderr"
 
@@ -79,9 +75,8 @@ prompt_secret() {
   fi
 
   printf "%s%s: " "${TAB3}" "${prompt}" >"$output_fd"
-  read -r -s value <"$input_fd"
+  read -r -s PROMPT_RESULT <"$input_fd"
   printf "\n" >"$output_fd"
-  printf "%s" "$value"
 }
 
 trim_value() {
@@ -137,14 +132,22 @@ collect_install_settings() {
 
   echo
   msg_info "Collecting LND configuration"
-  LND_ALIAS=$(trim_value "$(prompt_input "LND alias" "$LND_ALIAS")")
-  BITCOIN_NETWORK=$(trim_value "$(prompt_input "Bitcoin network (mainnet/testnet/signet/regtest)" "$BITCOIN_NETWORK")")
-  BITCOIND_RPC_HOST=$(trim_value "$(prompt_input "bitcoind RPC host" "$BITCOIND_RPC_HOST")")
-  BITCOIND_RPC_PORT=$(trim_value "$(prompt_input "bitcoind RPC port" "$BITCOIND_RPC_PORT")")
-  BITCOIND_ZMQ_RAWBLOCK=$(trim_value "$(prompt_input "bitcoind ZMQ rawblock endpoint" "$BITCOIND_ZMQ_RAWBLOCK")")
-  BITCOIND_ZMQ_RAWTX=$(trim_value "$(prompt_input "bitcoind ZMQ rawtx endpoint" "$BITCOIND_ZMQ_RAWTX")")
-  BITCOIND_RPC_USER=$(trim_value "$(prompt_input "bitcoind RPC user" "$BITCOIND_RPC_USER")")
-  BITCOIND_RPC_PASS=$(trim_value "$(prompt_secret "bitcoind RPC password")")
+  prompt_input "LND alias" "$LND_ALIAS"
+  LND_ALIAS=$(trim_value "$PROMPT_RESULT")
+  prompt_input "Bitcoin network (mainnet/testnet/signet/regtest)" "$BITCOIN_NETWORK"
+  BITCOIN_NETWORK=$(trim_value "$PROMPT_RESULT")
+  prompt_input "bitcoind RPC host" "$BITCOIND_RPC_HOST"
+  BITCOIND_RPC_HOST=$(trim_value "$PROMPT_RESULT")
+  prompt_input "bitcoind RPC port" "$BITCOIND_RPC_PORT"
+  BITCOIND_RPC_PORT=$(trim_value "$PROMPT_RESULT")
+  prompt_input "bitcoind ZMQ rawblock endpoint" "$BITCOIND_ZMQ_RAWBLOCK"
+  BITCOIND_ZMQ_RAWBLOCK=$(trim_value "$PROMPT_RESULT")
+  prompt_input "bitcoind ZMQ rawtx endpoint" "$BITCOIND_ZMQ_RAWTX"
+  BITCOIND_ZMQ_RAWTX=$(trim_value "$PROMPT_RESULT")
+  prompt_input "bitcoind RPC user" "$BITCOIND_RPC_USER"
+  BITCOIND_RPC_USER=$(trim_value "$PROMPT_RESULT")
+  prompt_secret "bitcoind RPC password"
+  BITCOIND_RPC_PASS=$(trim_value "$PROMPT_RESULT")
   [[ -n "$BITCOIND_RPC_PASS" ]] || {
     msg_error "bitcoind RPC password cannot be empty"
     exit 1
@@ -153,8 +156,10 @@ collect_install_settings() {
   if prompt_yes_no "Store wallet password locally for LND auto-unlock?"; then
     AUTO_UNLOCK_WALLET="yes"
     while true; do
-      LND_WALLET_PASSWORD=$(trim_value "$(prompt_secret "LND wallet password")")
-      LND_WALLET_PASSWORD_CONFIRM=$(trim_value "$(prompt_secret "Confirm LND wallet password")")
+      prompt_secret "LND wallet password"
+      LND_WALLET_PASSWORD=$(trim_value "$PROMPT_RESULT")
+      prompt_secret "Confirm LND wallet password"
+      LND_WALLET_PASSWORD_CONFIRM=$(trim_value "$PROMPT_RESULT")
       if [[ -n "$LND_WALLET_PASSWORD" && "$LND_WALLET_PASSWORD" == "$LND_WALLET_PASSWORD_CONFIRM" ]]; then
         break
       fi
@@ -166,31 +171,43 @@ collect_install_settings() {
 
   if prompt_yes_no "Install Static Channel Backup watcher?"; then
     ENABLE_SCB_BACKUP="yes"
-    case "$(trim_value "$(prompt_input "Backup method [1=Git remote, 2=Local directory]" "1")")" in
+    prompt_input "Backup method [1=Git remote, 2=Local directory]" "1"
+    case "$(trim_value "$PROMPT_RESULT")" in
       2 | local | Local)
         SCB_BACKUP_MODE="local"
-        SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Backup directory" "$SCB_BACKUP_DIR")")
+        prompt_input "Backup directory" "$SCB_BACKUP_DIR"
+        SCB_BACKUP_DIR=$(trim_value "$PROMPT_RESULT")
         ;;
       *)
         SCB_BACKUP_MODE="git"
-        SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Local working directory for git backups" "/var/lib/lnd-scb-backup")")
-        SCB_GIT_REMOTE_URL=$(trim_value "$(prompt_input "Git remote URL" "$SCB_GIT_REMOTE_URL")")
-        SCB_GIT_BRANCH=$(trim_value "$(prompt_input "Git branch" "$SCB_GIT_BRANCH")")
-        SCB_GIT_COMMIT_NAME=$(trim_value "$(prompt_input "Git commit name" "$SCB_GIT_COMMIT_NAME")")
-        SCB_GIT_COMMIT_EMAIL=$(trim_value "$(prompt_input "Git commit email" "$SCB_GIT_COMMIT_EMAIL")")
-        case "$(trim_value "$(prompt_input "Git auth method [1=HTTPS token, 2=SSH]" "1")")" in
+        prompt_input "Local working directory for git backups" "/var/lib/lnd-scb-backup"
+        SCB_BACKUP_DIR=$(trim_value "$PROMPT_RESULT")
+        prompt_input "Git remote URL" "$SCB_GIT_REMOTE_URL"
+        SCB_GIT_REMOTE_URL=$(trim_value "$PROMPT_RESULT")
+        prompt_input "Git branch" "$SCB_GIT_BRANCH"
+        SCB_GIT_BRANCH=$(trim_value "$PROMPT_RESULT")
+        prompt_input "Git commit name" "$SCB_GIT_COMMIT_NAME"
+        SCB_GIT_COMMIT_NAME=$(trim_value "$PROMPT_RESULT")
+        prompt_input "Git commit email" "$SCB_GIT_COMMIT_EMAIL"
+        SCB_GIT_COMMIT_EMAIL=$(trim_value "$PROMPT_RESULT")
+        prompt_input "Git auth method [1=HTTPS token, 2=SSH]" "1"
+        case "$(trim_value "$PROMPT_RESULT")" in
           2 | ssh | SSH)
             SCB_GIT_AUTH_METHOD="ssh"
-            SCB_GIT_SSH_KEY_PATH=$(trim_value "$(prompt_input "SSH private key path" "$SCB_GIT_SSH_KEY_PATH")")
-            SCB_GIT_SSH_HOST=$(trim_value "$(prompt_input "SSH host for known_hosts scan" "$(parse_git_host "$SCB_GIT_REMOTE_URL")")")
+            prompt_input "SSH private key path" "$SCB_GIT_SSH_KEY_PATH"
+            SCB_GIT_SSH_KEY_PATH=$(trim_value "$PROMPT_RESULT")
+            prompt_input "SSH host for known_hosts scan" "$(parse_git_host "$SCB_GIT_REMOTE_URL")"
+            SCB_GIT_SSH_HOST=$(trim_value "$PROMPT_RESULT")
             if [[ ! -f "$SCB_GIT_SSH_KEY_PATH" ]] && prompt_yes_no "Generate a dedicated SSH key for SCB backup now?"; then
               SCB_GIT_SSH_GENERATED="yes"
             fi
             ;;
           *)
             SCB_GIT_AUTH_METHOD="https"
-            SCB_GIT_USERNAME=$(trim_value "$(prompt_input "Git HTTPS username" "$SCB_GIT_USERNAME")")
-            SCB_GIT_TOKEN=$(trim_value "$(prompt_secret "Git HTTPS token / PAT")")
+            prompt_input "Git HTTPS username" "$SCB_GIT_USERNAME"
+            SCB_GIT_USERNAME=$(trim_value "$PROMPT_RESULT")
+            prompt_secret "Git HTTPS token / PAT"
+            SCB_GIT_TOKEN=$(trim_value "$PROMPT_RESULT")
             [[ -n "$SCB_GIT_TOKEN" ]] || {
               msg_error "Git HTTPS token cannot be empty"
               exit 1
@@ -204,8 +221,10 @@ collect_install_settings() {
   if prompt_yes_no "Install RTL web UI?"; then
     ENABLE_RTL="yes"
     while true; do
-      RTL_PASSWORD=$(trim_value "$(prompt_secret "RTL web password")")
-      RTL_PASSWORD_CONFIRM=$(trim_value "$(prompt_secret "Confirm RTL web password")")
+      prompt_secret "RTL web password"
+      RTL_PASSWORD=$(trim_value "$PROMPT_RESULT")
+      prompt_secret "Confirm RTL web password"
+      RTL_PASSWORD_CONFIRM=$(trim_value "$PROMPT_RESULT")
       if [[ -n "$RTL_PASSWORD" && "$RTL_PASSWORD" == "$RTL_PASSWORD_CONFIRM" ]]; then
         break
       fi
