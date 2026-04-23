@@ -412,18 +412,19 @@ EOF
 }
 
 install_rtl_release() {
-  local release_json rtl_version rtl_tar_url rtl_sig_url rtl_tar_file extracted_dir
+  local release_json rtl_version rtl_base_tag rtl_tar_url rtl_sig_url rtl_tar_file extracted_dir
 
   msg_info "Downloading RTL release metadata"
   release_json=$(curl -fsSL https://api.github.com/repos/Ride-The-Lightning/RTL/releases/latest)
   rtl_version=$(echo "$release_json" | jq -r '.tag_name')
-  rtl_tar_url=$(echo "$release_json" | jq -r '.assets[] | select(.name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.tar\\.gz$")) | .browser_download_url' | head -n1)
-  rtl_sig_url=$(echo "$release_json" | jq -r '.assets[] | select(.name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.tar\\.gz\\.asc$")) | .browser_download_url' | head -n1)
-  [[ -n "$rtl_version" && -n "$rtl_tar_url" && -n "$rtl_sig_url" ]] || {
-    msg_error "Unable to resolve the latest RTL release assets"
+  rtl_base_tag=$(echo "$rtl_version" | sed 's/-beta.*$//')
+  rtl_tar_url="https://github.com/Ride-The-Lightning/RTL/archive/refs/tags/${rtl_base_tag}.tar.gz"
+  rtl_sig_url="https://github.com/Ride-The-Lightning/RTL/releases/download/${rtl_base_tag}/${rtl_base_tag}.tar.gz.asc"
+  [[ -n "$rtl_version" && -n "$rtl_base_tag" ]] || {
+    msg_error "Unable to resolve the latest RTL release version"
     exit 1
   }
-  msg_ok "Resolved ${rtl_version}"
+  msg_ok "Resolved ${rtl_version} (${rtl_base_tag})"
 
   msg_info "Verifying RTL release"
   cd /tmp
