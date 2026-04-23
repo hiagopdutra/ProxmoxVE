@@ -51,15 +51,15 @@ prompt_secret() {
   local prompt="$1"
   local value
   read -r -s -p "${TAB3}${prompt}: " value
-  echo
-  echo "$value"
+  printf "\n" >&2
+  printf "%s" "$value"
 }
 
-escape_conf_string() {
+trim_value() {
   local value="$1"
-  value=${value//\\/\\\\}
-  value=${value//\"/\\\"}
-  printf '"%s"' "$value"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf "%s" "$value"
 }
 
 configure_defaults() {
@@ -85,14 +85,14 @@ collect_install_settings() {
 
   echo
   msg_info "Collecting LND configuration"
-  LND_ALIAS=$(prompt_input "LND alias" "$LND_ALIAS")
-  BITCOIN_NETWORK=$(prompt_input "Bitcoin network (mainnet/testnet/signet/regtest)" "$BITCOIN_NETWORK")
-  BITCOIND_RPC_HOST=$(prompt_input "bitcoind RPC host" "$BITCOIND_RPC_HOST")
-  BITCOIND_RPC_PORT=$(prompt_input "bitcoind RPC port" "$BITCOIND_RPC_PORT")
-  BITCOIND_ZMQ_RAWBLOCK=$(prompt_input "bitcoind ZMQ rawblock endpoint" "$BITCOIND_ZMQ_RAWBLOCK")
-  BITCOIND_ZMQ_RAWTX=$(prompt_input "bitcoind ZMQ rawtx endpoint" "$BITCOIND_ZMQ_RAWTX")
-  BITCOIND_RPC_USER=$(prompt_input "bitcoind RPC user" "$BITCOIND_RPC_USER")
-  BITCOIND_RPC_PASS=$(prompt_secret "bitcoind RPC password")
+  LND_ALIAS=$(trim_value "$(prompt_input "LND alias" "$LND_ALIAS")")
+  BITCOIN_NETWORK=$(trim_value "$(prompt_input "Bitcoin network (mainnet/testnet/signet/regtest)" "$BITCOIN_NETWORK")")
+  BITCOIND_RPC_HOST=$(trim_value "$(prompt_input "bitcoind RPC host" "$BITCOIND_RPC_HOST")")
+  BITCOIND_RPC_PORT=$(trim_value "$(prompt_input "bitcoind RPC port" "$BITCOIND_RPC_PORT")")
+  BITCOIND_ZMQ_RAWBLOCK=$(trim_value "$(prompt_input "bitcoind ZMQ rawblock endpoint" "$BITCOIND_ZMQ_RAWBLOCK")")
+  BITCOIND_ZMQ_RAWTX=$(trim_value "$(prompt_input "bitcoind ZMQ rawtx endpoint" "$BITCOIND_ZMQ_RAWTX")")
+  BITCOIND_RPC_USER=$(trim_value "$(prompt_input "bitcoind RPC user" "$BITCOIND_RPC_USER")")
+  BITCOIND_RPC_PASS=$(trim_value "$(prompt_secret "bitcoind RPC password")")
   [[ -n "$BITCOIND_RPC_PASS" ]] || {
     msg_error "bitcoind RPC password cannot be empty"
     exit 1
@@ -101,8 +101,8 @@ collect_install_settings() {
   if prompt_yes_no "Store wallet password locally for LND auto-unlock?"; then
     AUTO_UNLOCK_WALLET="yes"
     while true; do
-      LND_WALLET_PASSWORD=$(prompt_secret "LND wallet password")
-      LND_WALLET_PASSWORD_CONFIRM=$(prompt_secret "Confirm LND wallet password")
+      LND_WALLET_PASSWORD=$(trim_value "$(prompt_secret "LND wallet password")")
+      LND_WALLET_PASSWORD_CONFIRM=$(trim_value "$(prompt_secret "Confirm LND wallet password")")
       if [[ -n "$LND_WALLET_PASSWORD" && "$LND_WALLET_PASSWORD" == "$LND_WALLET_PASSWORD_CONFIRM" ]]; then
         break
       fi
@@ -114,14 +114,14 @@ collect_install_settings() {
 
   if prompt_yes_no "Install local Static Channel Backup watcher?"; then
     ENABLE_SCB_BACKUP="yes"
-    SCB_BACKUP_DIR=$(prompt_input "Backup directory" "$SCB_BACKUP_DIR")
+    SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Backup directory" "$SCB_BACKUP_DIR")")
   fi
 
   if prompt_yes_no "Install RTL web UI?"; then
     ENABLE_RTL="yes"
     while true; do
-      RTL_PASSWORD=$(prompt_secret "RTL web password")
-      RTL_PASSWORD_CONFIRM=$(prompt_secret "Confirm RTL web password")
+      RTL_PASSWORD=$(trim_value "$(prompt_secret "RTL web password")")
+      RTL_PASSWORD_CONFIRM=$(trim_value "$(prompt_secret "Confirm RTL web password")")
       if [[ -n "$RTL_PASSWORD" && "$RTL_PASSWORD" == "$RTL_PASSWORD_CONFIRM" ]]; then
         break
       fi
@@ -236,7 +236,6 @@ write_lnd_config() {
   local tor_block=""
   local unlock_block=""
   local network_lines=""
-  local alias_conf rpc_host_conf rpc_user_conf rpc_pass_conf zmq_block_conf zmq_tx_conf
 
   case "$BITCOIN_NETWORK" in
     mainnet | testnet | signet | regtest) ;;
@@ -248,12 +247,6 @@ write_lnd_config() {
 
   network_lines="bitcoin.active=true
 bitcoin.${BITCOIN_NETWORK}=true"
-  alias_conf=$(escape_conf_string "$LND_ALIAS")
-  rpc_host_conf=$(escape_conf_string "${BITCOIND_RPC_HOST}:${BITCOIND_RPC_PORT}")
-  rpc_user_conf=$(escape_conf_string "$BITCOIND_RPC_USER")
-  rpc_pass_conf=$(escape_conf_string "$BITCOIND_RPC_PASS")
-  zmq_block_conf=$(escape_conf_string "$BITCOIND_ZMQ_RAWBLOCK")
-  zmq_tx_conf=$(escape_conf_string "$BITCOIND_ZMQ_RAWTX")
 
   if [[ "$AUTO_UNLOCK_WALLET" == "yes" ]]; then
     unlock_block="wallet-unlock-password-file=${LND_PASSWORD_FILE}
@@ -275,7 +268,7 @@ tor.control=127.0.0.1:9051'
 # community-scripts: lnd configuration
 
 [Application Options]
-alias=${alias_conf}
+alias=${LND_ALIAS}
 debuglevel=info
 maxpendingchannels=5
 listen=0.0.0.0:9735
@@ -308,11 +301,11 @@ ${network_lines}
 bitcoin.node=bitcoind
 
 [Bitcoind]
-bitcoind.rpchost=${rpc_host_conf}
-bitcoind.rpcuser=${rpc_user_conf}
-bitcoind.rpcpass=${rpc_pass_conf}
-bitcoind.zmqpubrawblock=${zmq_block_conf}
-bitcoind.zmqpubrawtx=${zmq_tx_conf}
+bitcoind.rpchost=${BITCOIND_RPC_HOST}:${BITCOIND_RPC_PORT}
+bitcoind.rpcuser=${BITCOIND_RPC_USER}
+bitcoind.rpcpass=${BITCOIND_RPC_PASS}
+bitcoind.zmqpubrawblock=${BITCOIND_ZMQ_RAWBLOCK}
+bitcoind.zmqpubrawtx=${BITCOIND_ZMQ_RAWTX}
 ${tor_block}
 EOF
   chown lnd:lnd "$LND_CONF"
