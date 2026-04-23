@@ -32,10 +32,12 @@ prompt_input() {
   local value
 
   if [[ -n "$default_value" ]]; then
-    read -r -p "${TAB3}${prompt} [${default_value}]: " value
+    printf "%s%s [%s]: " "${TAB3}" "${prompt}" "${default_value}" >&2
+    read -r value
     echo "${value:-$default_value}"
   else
-    read -r -p "${TAB3}${prompt}: " value
+    printf "%s%s: " "${TAB3}" "${prompt}" >&2
+    read -r value
     echo "$value"
   fi
 }
@@ -45,7 +47,8 @@ prompt_yes_no() {
   local default="${2:-N}"
   local answer
 
-  read -r -p "${TAB3}${prompt} <y/N> " answer
+  printf "%s%s <y/N> " "${TAB3}" "${prompt}" >&2
+  read -r answer
   answer="${answer:-$default}"
   [[ "${answer,,}" =~ ^(y|yes)$ ]]
 }
@@ -53,7 +56,8 @@ prompt_yes_no() {
 prompt_secret() {
   local prompt="$1"
   local value
-  read -r -s -p "${TAB3}${prompt}: " value
+  printf "%s%s: " "${TAB3}" "${prompt}" >&2
+  read -r -s value
   printf "\n" >&2
   printf "%s" "$value"
 }
