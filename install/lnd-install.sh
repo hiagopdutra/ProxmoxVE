@@ -306,6 +306,8 @@ db.bolt.auto-compact-min-age=168h
 [Bitcoin]
 ${network_lines}
 bitcoin.node=bitcoind
+
+[Bitcoind]
 bitcoind.rpchost=${rpc_host_conf}
 bitcoind.rpcuser=${rpc_user_conf}
 bitcoind.rpcpass=${rpc_pass_conf}
