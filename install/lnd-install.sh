@@ -453,6 +453,8 @@ install_rtl_release() {
 }
 
 install_rtl() {
+  local macaroon_file="${LND_DATA_DIR}/data/chain/bitcoin/${BITCOIN_NETWORK}/admin.macaroon"
+
   [[ "$ENABLE_RTL" == "yes" ]] || return 0
 
   install_rtl_release
@@ -517,7 +519,6 @@ User=lnd
 Group=lnd
 WorkingDirectory=${RTL_DIR}
 Environment=RTL_CONFIG_PATH=${RTL_CONFIG}
-ExecStartPre=/bin/bash -c 'until [ -f ${LND_DATA_DIR}/data/chain/bitcoin/${BITCOIN_NETWORK}/admin.macaroon ]; do sleep 5; done'
 ExecStart=/usr/bin/node rtl
 Restart=always
 RestartSec=5
@@ -526,8 +527,14 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable -q --now rtl
-  msg_ok "Created RTL service"
+  systemctl enable -q rtl
+  if [[ -f "$macaroon_file" ]]; then
+    systemctl start rtl
+    msg_ok "Created RTL service"
+  else
+    msg_warn "RTL service enabled but not started yet"
+    echo -e "${INFO}${YW} Create the LND wallet first, then run: ${GN}systemctl start rtl${CL}"
+  fi
 }
 
 configure_tor() {
