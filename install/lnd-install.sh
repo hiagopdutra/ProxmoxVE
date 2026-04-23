@@ -18,6 +18,7 @@ LND_CONF="${LND_DATA_DIR}/lnd.conf"
 LND_PASSWORD_FILE="${LND_DATA_DIR}/password.txt"
 RTL_DIR="/opt/RTL"
 RTL_CONFIG="${RTL_DIR}/RTL-Config.json"
+RTL_CONFIG_DIR="${RTL_DIR}"
 RTL_DB_DIR="/var/lib/rtl"
 SCB_SCRIPT="/usr/local/bin/scb-backup"
 SCB_SERVICE="/etc/systemd/system/scb-backup.service"
@@ -513,7 +514,7 @@ Type=simple
 User=lnd
 Group=lnd
 WorkingDirectory=${RTL_DIR}
-Environment=RTL_CONFIG_PATH=${RTL_CONFIG}
+Environment=RTL_CONFIG_PATH=${RTL_CONFIG_DIR}
 ExecStart=/usr/bin/node rtl
 Restart=always
 RestartSec=5
