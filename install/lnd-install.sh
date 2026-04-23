@@ -510,15 +510,30 @@ init_git_repo() {
     git -C "\$LOCAL_BACKUP_DIR" init -b "\${SCB_GIT_BRANCH}" >/dev/null 2>&1
   fi
 
-  git -C "\$LOCAL_BACKUP_DIR" checkout -B "\${SCB_GIT_BRANCH}" >/dev/null 2>&1
-  git -C "\$LOCAL_BACKUP_DIR" config user.name "\${SCB_GIT_COMMIT_NAME}"
-  git -C "\$LOCAL_BACKUP_DIR" config user.email "\${SCB_GIT_COMMIT_EMAIL}"
-  printf '.channel.backup.sha256\n' >"\$LOCAL_BACKUP_DIR/.gitignore"
-
   if git -C "\$LOCAL_BACKUP_DIR" remote get-url origin >/dev/null 2>&1; then
     git -C "\$LOCAL_BACKUP_DIR" remote set-url origin "\${SCB_GIT_REMOTE_URL}"
   else
     git -C "\$LOCAL_BACKUP_DIR" remote add origin "\${SCB_GIT_REMOTE_URL}"
+  fi
+
+  git -C "\$LOCAL_BACKUP_DIR" config user.name "\${SCB_GIT_COMMIT_NAME}"
+  git -C "\$LOCAL_BACKUP_DIR" config user.email "\${SCB_GIT_COMMIT_EMAIL}"
+  printf '.channel.backup.sha256\n' >"\$LOCAL_BACKUP_DIR/.gitignore"
+
+  if [[ "\${SCB_GIT_AUTH_METHOD:-https}" == "ssh" ]]; then
+    GIT_SSH_COMMAND="ssh -i \${SCB_GIT_SSH_KEY_PATH} -o IdentitiesOnly=yes -o UserKnownHostsFile=\${SCB_GIT_KNOWN_HOSTS_FILE} -o StrictHostKeyChecking=yes" \
+      git -C "\$LOCAL_BACKUP_DIR" fetch --quiet origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+  else
+    GIT_TERMINAL_PROMPT=0 \
+      GIT_USERNAME="\${SCB_GIT_USERNAME:-x-access-token}" \
+      GIT_PASSWORD="\${SCB_GIT_TOKEN:-}" \
+      git -C "\$LOCAL_BACKUP_DIR" -c credential.helper= -c core.askPass="\${SCB_GIT_ASKPASS}" fetch --quiet origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+  fi
+
+  if git -C "\$LOCAL_BACKUP_DIR" show-ref --verify --quiet "refs/remotes/origin/\${SCB_GIT_BRANCH}"; then
+    git -C "\$LOCAL_BACKUP_DIR" checkout -B "\${SCB_GIT_BRANCH}" "origin/\${SCB_GIT_BRANCH}" >/dev/null 2>&1
+  else
+    git -C "\$LOCAL_BACKUP_DIR" checkout -B "\${SCB_GIT_BRANCH}" >/dev/null 2>&1
   fi
 }
 
@@ -531,16 +546,16 @@ push_git_backup() {
     return 0
   fi
 
-  git -C "\$LOCAL_BACKUP_DIR" commit -m "SCB backup \$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+  git -C "\$LOCAL_BACKUP_DIR" commit -m "SCB backup \$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null
 
   if [[ "\${SCB_GIT_AUTH_METHOD:-https}" == "ssh" ]]; then
     GIT_SSH_COMMAND="ssh -i \${SCB_GIT_SSH_KEY_PATH} -o IdentitiesOnly=yes -o UserKnownHostsFile=\${SCB_GIT_KNOWN_HOSTS_FILE} -o StrictHostKeyChecking=yes" \
-      git -C "\$LOCAL_BACKUP_DIR" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+      git -C "\$LOCAL_BACKUP_DIR" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null
   else
     GIT_TERMINAL_PROMPT=0 \
       GIT_USERNAME="\${SCB_GIT_USERNAME:-x-access-token}" \
       GIT_PASSWORD="\${SCB_GIT_TOKEN:-}" \
-      git -C "\$LOCAL_BACKUP_DIR" -c credential.helper= -c core.askPass="\${SCB_GIT_ASKPASS}" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+      git -C "\$LOCAL_BACKUP_DIR" -c credential.helper= -c core.askPass="\${SCB_GIT_ASKPASS}" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null
   fi
 }
 
