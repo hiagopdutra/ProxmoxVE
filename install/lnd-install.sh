@@ -537,6 +537,13 @@ configure_tor() {
   [[ "$ENABLE_TOR" == "yes" ]] || return 0
 
   msg_info "Configuring Tor"
+  grep -q '^ControlPort 9051$' /etc/tor/torrc 2>/dev/null || cat <<EOF >>/etc/tor/torrc
+
+# community-scripts: lnd tor control
+ControlPort 9051
+CookieAuthentication 1
+CookieAuthFileGroupReadable 1
+EOF
   systemctl enable -q --now tor
   if [[ "$TOR_FOR_RTL" == "yes" ]]; then
     grep -q "hidden_service_rtl" /etc/tor/torrc 2>/dev/null || cat <<EOF >>/etc/tor/torrc
