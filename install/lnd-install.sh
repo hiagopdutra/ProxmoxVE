@@ -767,6 +767,11 @@ update_lnd_install() {
   local rtl_config_backup="/tmp/RTL-Config.json"
 
   configure_defaults
+  [[ -f "$SCB_ENV_FILE" ]] && source "$SCB_ENV_FILE"
+  [[ -f /etc/systemd/system/scb-backup.service ]] && ENABLE_SCB_BACKUP="yes"
+  [[ -d "$RTL_DIR" && -f "$RTL_CONFIG" ]] && ENABLE_RTL="yes"
+  grep -q '^ControlPort 9051$' /etc/tor/torrc 2>/dev/null && ENABLE_TOR="yes"
+  grep -q "hidden_service_rtl" /etc/tor/torrc 2>/dev/null && TOR_FOR_RTL="yes"
 
   msg_info "Updating LND"
   systemctl stop rtl 2>/dev/null || true
@@ -774,6 +779,10 @@ update_lnd_install() {
   install_lnd_release
   systemctl start lnd
   msg_ok "Updated LND"
+
+  if [[ "$ENABLE_SCB_BACKUP" == "yes" ]]; then
+    install_scb_backup
+  fi
 
   if [[ -d "$RTL_DIR" && -f "$RTL_CONFIG" ]]; then
     msg_info "Updating RTL"
@@ -785,6 +794,10 @@ update_lnd_install() {
     chmod 640 "$RTL_CONFIG"
     systemctl start rtl 2>/dev/null || true
     msg_ok "Updated RTL"
+  fi
+
+  if [[ "$ENABLE_TOR" == "yes" ]]; then
+    configure_tor
   fi
 }
 
