@@ -497,6 +497,7 @@ SCB_SOURCE_DIR="\$(dirname "\$SCB_SOURCE_FILE")"
 LOCAL_BACKUP_DIR="${SCB_BACKUP_DIR}"
 STATE_FILE="\${LOCAL_BACKUP_DIR}/.channel.backup.sha256"
 ENV_FILE="${SCB_ENV_FILE}"
+SCB_EXPORT_FILE="${LND_DATA_DIR}/data/chain/bitcoin/${BITCOIN_NETWORK}/channel-all.bak"
 
 [[ -f "\$ENV_FILE" ]] && source "\$ENV_FILE"
 
@@ -525,7 +526,7 @@ push_git_backup() {
   [[ "\${SCB_BACKUP_MODE:-local}" == "git" ]] || return 0
 
   init_git_repo
-  git -C "\$LOCAL_BACKUP_DIR" add .gitignore channel.backup channel-*.backup >/dev/null 2>&1 || true
+  git -C "\$LOCAL_BACKUP_DIR" add .gitignore channel.backup channel-*.backup channel-all.bak >/dev/null 2>&1 || true
   if git -C "\$LOCAL_BACKUP_DIR" diff --cached --quiet >/dev/null 2>&1; then
     return 0
   fi
@@ -554,6 +555,7 @@ backup_if_changed() {
   if [[ "\$force_run" == "yes" || "\$current_hash" != "\$previous_hash" ]]; then
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel.backup"
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel-\$(date +%Y%m%d-%H%M%S).backup"
+    [[ -f "\$SCB_EXPORT_FILE" ]] && cp "\$SCB_EXPORT_FILE" "\$LOCAL_BACKUP_DIR/channel-all.bak"
     printf '%s\n' "\$current_hash" >"\$STATE_FILE"
     push_git_backup
   fi
