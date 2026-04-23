@@ -30,6 +30,11 @@ function update_script() {
   fi
 
   msg_info "Updating ${APP} LXC"
+  export FUNCTIONS_FILE_PATH="$(curl -fsSL "${COMMUNITY_SCRIPTS_BASE_URL}/misc/install.func")"
+  if [[ -z "$FUNCTIONS_FILE_PATH" || ${#FUNCTIONS_FILE_PATH} -lt 100 ]]; then
+    msg_error "Failed to download install functions"
+    exit 1
+  fi
   type=update bash -c "$(curl -fsSL "${COMMUNITY_SCRIPTS_BASE_URL}/install/lnd-install.sh")"
   msg_ok "Updated successfully!"
   exit
