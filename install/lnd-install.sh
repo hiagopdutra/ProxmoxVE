@@ -466,17 +466,23 @@ EOF
   chmod 640 "$SCB_ENV_FILE"
 
   if [[ "$SCB_BACKUP_MODE" == "git" && "$SCB_GIT_AUTH_METHOD" == "ssh" ]]; then
+    local scb_ssh_dir
+    scb_ssh_dir="$(dirname "$SCB_GIT_SSH_KEY_PATH")"
     msg_info "Preparing SCB backup SSH access"
-    mkdir -p "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
+    mkdir -p "$scb_ssh_dir"
+    chown lnd:lnd "$scb_ssh_dir"
+    chmod 700 "$scb_ssh_dir"
     touch "$SCB_GIT_KNOWN_HOSTS_FILE"
+    chown lnd:lnd "$SCB_GIT_KNOWN_HOSTS_FILE"
+    chmod 644 "$SCB_GIT_KNOWN_HOSTS_FILE"
     if [[ "$SCB_GIT_SSH_GENERATED" == "yes" && ! -f "$SCB_GIT_SSH_KEY_PATH" ]]; then
       runuser -u lnd -- ssh-keygen -q -t ed25519 -N "" -f "$SCB_GIT_SSH_KEY_PATH"
     fi
     if [[ -n "$SCB_GIT_SSH_HOST" ]]; then
       ssh-keyscan -H "$SCB_GIT_SSH_HOST" >>"$SCB_GIT_KNOWN_HOSTS_FILE" 2>/dev/null || true
     fi
-    chown -R lnd:lnd "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
-    chmod 700 "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
+    chown -R lnd:lnd "$scb_ssh_dir"
+    chmod 700 "$scb_ssh_dir"
     [[ -f "$SCB_GIT_SSH_KEY_PATH" ]] && chmod 600 "$SCB_GIT_SSH_KEY_PATH"
     chmod 644 "$SCB_GIT_KNOWN_HOSTS_FILE"
     msg_ok "Prepared SCB backup SSH access"
