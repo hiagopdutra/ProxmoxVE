@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/lightningnetwork/lnd | https://raspibolt.org/guide/lightning/
 
+COMMUNITY_SCRIPTS_BASE_URL="${COMMUNITY_SCRIPTS_BASE_URL:-https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main}"
+source <(curl -fsSL "${COMMUNITY_SCRIPTS_BASE_URL}/misc/build.func")
 APP="LND"
 var_tags="${var_tags:-bitcoin;lightning}"
 var_cpu="${var_cpu:-2}"
@@ -29,7 +30,7 @@ function update_script() {
   fi
 
   msg_info "Updating ${APP} LXC"
-  type=update bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/lnd-install.sh)"
+  type=update bash -c "$(curl -fsSL "${COMMUNITY_SCRIPTS_BASE_URL}/install/lnd-install.sh")"
   msg_ok "Updated successfully!"
   exit
 }
