@@ -22,6 +22,8 @@ RTL_CONFIG_DIR="${RTL_DIR}"
 RTL_DB_DIR="/var/lib/rtl"
 SCB_SCRIPT="/usr/local/bin/scb-backup"
 SCB_SERVICE="/etc/systemd/system/scb-backup.service"
+SCB_ENV_FILE="/etc/lnd-scb-backup.env"
+SCB_GIT_ASKPASS="/usr/local/bin/scb-git-askpass"
 TOR_RTL_SERVICE_DIR="/var/lib/tor/hidden_service_rtl"
 
 prompt_input() {
@@ -63,6 +65,17 @@ trim_value() {
   printf "%s" "$value"
 }
 
+parse_git_host() {
+  local remote_url="$1"
+  if [[ "$remote_url" =~ ^https?://([^/@]+@)?([^/:]+) ]]; then
+    printf "%s" "${BASH_REMATCH[2]}"
+  elif [[ "$remote_url" =~ ^ssh://([^/@]+@)?([^/:]+) ]]; then
+    printf "%s" "${BASH_REMATCH[2]}"
+  elif [[ "$remote_url" =~ ^[^@]+@([^:]+): ]]; then
+    printf "%s" "${BASH_REMATCH[1]}"
+  fi
+}
+
 configure_defaults() {
   BITCOIN_NETWORK="${BITCOIN_NETWORK:-mainnet}"
   LND_ALIAS="${LND_ALIAS:-$(hostname)}"
@@ -75,10 +88,22 @@ configure_defaults() {
   ENABLE_TOR="${ENABLE_TOR:-no}"
   ENABLE_RTL="${ENABLE_RTL:-no}"
   ENABLE_SCB_BACKUP="${ENABLE_SCB_BACKUP:-no}"
+  SCB_BACKUP_MODE="${SCB_BACKUP_MODE:-local}"
   AUTO_UNLOCK_WALLET="${AUTO_UNLOCK_WALLET:-no}"
   TOR_FOR_RTL="${TOR_FOR_RTL:-no}"
   RTL_PASSWORD="${RTL_PASSWORD:-}"
   SCB_BACKUP_DIR="${SCB_BACKUP_DIR:-/mnt/lnd-scb-backup}"
+  SCB_GIT_REMOTE_URL="${SCB_GIT_REMOTE_URL:-https://github.com/YOUR_USER/lnd-scb-backup.git}"
+  SCB_GIT_BRANCH="${SCB_GIT_BRANCH:-main}"
+  SCB_GIT_AUTH_METHOD="${SCB_GIT_AUTH_METHOD:-https}"
+  SCB_GIT_USERNAME="${SCB_GIT_USERNAME:-x-access-token}"
+  SCB_GIT_TOKEN="${SCB_GIT_TOKEN:-}"
+  SCB_GIT_COMMIT_NAME="${SCB_GIT_COMMIT_NAME:-LND SCB Backup}"
+  SCB_GIT_COMMIT_EMAIL="${SCB_GIT_COMMIT_EMAIL:-lnd@$(hostname)}"
+  SCB_GIT_SSH_KEY_PATH="${SCB_GIT_SSH_KEY_PATH:-/home/lnd/.ssh/id_ed25519}"
+  SCB_GIT_KNOWN_HOSTS_FILE="${SCB_GIT_KNOWN_HOSTS_FILE:-/home/lnd/.ssh/known_hosts}"
+  SCB_GIT_SSH_HOST="${SCB_GIT_SSH_HOST:-}"
+  SCB_GIT_SSH_GENERATED="${SCB_GIT_SSH_GENERATED:-no}"
 }
 
 collect_install_settings() {
@@ -113,9 +138,41 @@ collect_install_settings() {
     AUTO_UNLOCK_WALLET="no"
   fi
 
-  if prompt_yes_no "Install local Static Channel Backup watcher?"; then
+  if prompt_yes_no "Install Static Channel Backup watcher?"; then
     ENABLE_SCB_BACKUP="yes"
-    SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Backup directory" "$SCB_BACKUP_DIR")")
+    case "$(trim_value "$(prompt_input "Backup method [1=Git remote, 2=Local directory]" "1")")" in
+      2 | local | Local)
+        SCB_BACKUP_MODE="local"
+        SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Backup directory" "$SCB_BACKUP_DIR")")
+        ;;
+      *)
+        SCB_BACKUP_MODE="git"
+        SCB_BACKUP_DIR=$(trim_value "$(prompt_input "Local working directory for git backups" "/var/lib/lnd-scb-backup")")
+        SCB_GIT_REMOTE_URL=$(trim_value "$(prompt_input "Git remote URL" "$SCB_GIT_REMOTE_URL")")
+        SCB_GIT_BRANCH=$(trim_value "$(prompt_input "Git branch" "$SCB_GIT_BRANCH")")
+        SCB_GIT_COMMIT_NAME=$(trim_value "$(prompt_input "Git commit name" "$SCB_GIT_COMMIT_NAME")")
+        SCB_GIT_COMMIT_EMAIL=$(trim_value "$(prompt_input "Git commit email" "$SCB_GIT_COMMIT_EMAIL")")
+        case "$(trim_value "$(prompt_input "Git auth method [1=HTTPS token, 2=SSH]" "1")")" in
+          2 | ssh | SSH)
+            SCB_GIT_AUTH_METHOD="ssh"
+            SCB_GIT_SSH_KEY_PATH=$(trim_value "$(prompt_input "SSH private key path" "$SCB_GIT_SSH_KEY_PATH")")
+            SCB_GIT_SSH_HOST=$(trim_value "$(prompt_input "SSH host for known_hosts scan" "$(parse_git_host "$SCB_GIT_REMOTE_URL")")")
+            if [[ ! -f "$SCB_GIT_SSH_KEY_PATH" ]] && prompt_yes_no "Generate a dedicated SSH key for SCB backup now?"; then
+              SCB_GIT_SSH_GENERATED="yes"
+            fi
+            ;;
+          *)
+            SCB_GIT_AUTH_METHOD="https"
+            SCB_GIT_USERNAME=$(trim_value "$(prompt_input "Git HTTPS username" "$SCB_GIT_USERNAME")")
+            SCB_GIT_TOKEN=$(trim_value "$(prompt_secret "Git HTTPS token / PAT")")
+            [[ -n "$SCB_GIT_TOKEN" ]] || {
+              msg_error "Git HTTPS token cannot be empty"
+              exit 1
+            }
+            ;;
+        esac
+        ;;
+    esac
   fi
 
   if prompt_yes_no "Install RTL web UI?"; then
@@ -155,6 +212,9 @@ install_dependencies() {
   fi
   if [[ "$ENABLE_TOR" == "yes" ]]; then
     $STD apt install -y tor
+  fi
+  if [[ "$ENABLE_SCB_BACKUP" == "yes" && "$SCB_BACKUP_MODE" == "git" && "$SCB_GIT_AUTH_METHOD" == "ssh" ]]; then
+    $STD apt install -y openssh-client
   fi
   if [[ "$ENABLE_RTL" == "yes" ]]; then
     NODE_VERSION="22" setup_nodejs
@@ -344,9 +404,59 @@ EOF
 install_scb_backup() {
   [[ "$ENABLE_SCB_BACKUP" == "yes" ]] || return 0
 
+  write_scb_env() {
+    local key="$1"
+    local value="$2"
+    printf '%s=%q\n' "$key" "$value" >>"$SCB_ENV_FILE"
+  }
+
   msg_info "Configuring SCB backup"
   mkdir -p "$SCB_BACKUP_DIR"
   chown -R lnd:lnd "$SCB_BACKUP_DIR"
+  cat <<'EOF' >"$SCB_GIT_ASKPASS"
+#!/usr/bin/env bash
+case "$1" in
+  *sername*) printf '%s\n' "${GIT_USERNAME:-x-access-token}" ;;
+  *assword*) printf '%s\n' "${GIT_PASSWORD:-}" ;;
+  *) printf '\n' ;;
+esac
+EOF
+  chmod 755 "$SCB_GIT_ASKPASS"
+
+  : >"$SCB_ENV_FILE"
+  write_scb_env "SCB_BACKUP_MODE" "$SCB_BACKUP_MODE"
+  write_scb_env "SCB_BACKUP_DIR" "$SCB_BACKUP_DIR"
+  write_scb_env "SCB_GIT_REMOTE_URL" "$SCB_GIT_REMOTE_URL"
+  write_scb_env "SCB_GIT_BRANCH" "$SCB_GIT_BRANCH"
+  write_scb_env "SCB_GIT_AUTH_METHOD" "$SCB_GIT_AUTH_METHOD"
+  write_scb_env "SCB_GIT_USERNAME" "$SCB_GIT_USERNAME"
+  write_scb_env "SCB_GIT_TOKEN" "$SCB_GIT_TOKEN"
+  write_scb_env "SCB_GIT_COMMIT_NAME" "$SCB_GIT_COMMIT_NAME"
+  write_scb_env "SCB_GIT_COMMIT_EMAIL" "$SCB_GIT_COMMIT_EMAIL"
+  write_scb_env "SCB_GIT_SSH_KEY_PATH" "$SCB_GIT_SSH_KEY_PATH"
+  write_scb_env "SCB_GIT_KNOWN_HOSTS_FILE" "$SCB_GIT_KNOWN_HOSTS_FILE"
+  write_scb_env "SCB_GIT_SSH_HOST" "$SCB_GIT_SSH_HOST"
+  write_scb_env "SCB_GIT_ASKPASS" "$SCB_GIT_ASKPASS"
+  chown root:lnd "$SCB_ENV_FILE"
+  chmod 640 "$SCB_ENV_FILE"
+
+  if [[ "$SCB_BACKUP_MODE" == "git" && "$SCB_GIT_AUTH_METHOD" == "ssh" ]]; then
+    msg_info "Preparing SCB backup SSH access"
+    mkdir -p "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
+    touch "$SCB_GIT_KNOWN_HOSTS_FILE"
+    if [[ "$SCB_GIT_SSH_GENERATED" == "yes" && ! -f "$SCB_GIT_SSH_KEY_PATH" ]]; then
+      runuser -u lnd -- ssh-keygen -q -t ed25519 -N "" -f "$SCB_GIT_SSH_KEY_PATH"
+    fi
+    if [[ -n "$SCB_GIT_SSH_HOST" ]]; then
+      ssh-keyscan -H "$SCB_GIT_SSH_HOST" >>"$SCB_GIT_KNOWN_HOSTS_FILE" 2>/dev/null || true
+    fi
+    chown -R lnd:lnd "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
+    chmod 700 "$(dirname "$SCB_GIT_SSH_KEY_PATH")"
+    [[ -f "$SCB_GIT_SSH_KEY_PATH" ]] && chmod 600 "$SCB_GIT_SSH_KEY_PATH"
+    chmod 644 "$SCB_GIT_KNOWN_HOSTS_FILE"
+    msg_ok "Prepared SCB backup SSH access"
+  fi
+
   cat <<EOF >"$SCB_SCRIPT"
 #!/usr/bin/env bash
 set -euo pipefail
@@ -355,8 +465,52 @@ SCB_SOURCE_FILE="${LND_DATA_DIR}/data/chain/bitcoin/${BITCOIN_NETWORK}/channel.b
 SCB_SOURCE_DIR="\$(dirname "\$SCB_SOURCE_FILE")"
 LOCAL_BACKUP_DIR="${SCB_BACKUP_DIR}"
 STATE_FILE="\${LOCAL_BACKUP_DIR}/.channel.backup.sha256"
+ENV_FILE="${SCB_ENV_FILE}"
+
+[[ -f "\$ENV_FILE" ]] && source "\$ENV_FILE"
 
 mkdir -p "\$LOCAL_BACKUP_DIR"
+
+init_git_repo() {
+  [[ "\${SCB_BACKUP_MODE:-local}" == "git" ]] || return 0
+
+  if ! git -C "\$LOCAL_BACKUP_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "\$LOCAL_BACKUP_DIR" init -b "\${SCB_GIT_BRANCH}" >/dev/null 2>&1
+  fi
+
+  git -C "\$LOCAL_BACKUP_DIR" checkout -B "\${SCB_GIT_BRANCH}" >/dev/null 2>&1
+  git -C "\$LOCAL_BACKUP_DIR" config user.name "\${SCB_GIT_COMMIT_NAME}"
+  git -C "\$LOCAL_BACKUP_DIR" config user.email "\${SCB_GIT_COMMIT_EMAIL}"
+  printf '.channel.backup.sha256\n' >"\$LOCAL_BACKUP_DIR/.gitignore"
+
+  if git -C "\$LOCAL_BACKUP_DIR" remote get-url origin >/dev/null 2>&1; then
+    git -C "\$LOCAL_BACKUP_DIR" remote set-url origin "\${SCB_GIT_REMOTE_URL}"
+  else
+    git -C "\$LOCAL_BACKUP_DIR" remote add origin "\${SCB_GIT_REMOTE_URL}"
+  fi
+}
+
+push_git_backup() {
+  [[ "\${SCB_BACKUP_MODE:-local}" == "git" ]] || return 0
+
+  init_git_repo
+  git -C "\$LOCAL_BACKUP_DIR" add .gitignore channel.backup channel-*.backup >/dev/null 2>&1 || true
+  if git -C "\$LOCAL_BACKUP_DIR" diff --cached --quiet >/dev/null 2>&1; then
+    return 0
+  fi
+
+  git -C "\$LOCAL_BACKUP_DIR" commit -m "SCB backup \$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+
+  if [[ "\${SCB_GIT_AUTH_METHOD:-https}" == "ssh" ]]; then
+    GIT_SSH_COMMAND="ssh -i \${SCB_GIT_SSH_KEY_PATH} -o IdentitiesOnly=yes -o UserKnownHostsFile=\${SCB_GIT_KNOWN_HOSTS_FILE} -o StrictHostKeyChecking=yes" \
+      git -C "\$LOCAL_BACKUP_DIR" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+  else
+    GIT_TERMINAL_PROMPT=0 \
+      GIT_USERNAME="\${SCB_GIT_USERNAME:-x-access-token}" \
+      GIT_PASSWORD="\${SCB_GIT_TOKEN:-}" \
+      git -C "\$LOCAL_BACKUP_DIR" -c credential.helper= -c core.askPass="\${SCB_GIT_ASKPASS}" push -u origin "\${SCB_GIT_BRANCH}" >/dev/null 2>&1 || true
+  fi
+}
 
 backup_if_changed() {
   local current_hash previous_hash
@@ -370,9 +524,11 @@ backup_if_changed() {
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel.backup"
     cp "\$SCB_SOURCE_FILE" "\$LOCAL_BACKUP_DIR/channel-\$(date +%Y%m%d-%H%M%S).backup"
     printf '%s\n' "\$current_hash" >"\$STATE_FILE"
+    push_git_backup
   fi
 }
 
+init_git_repo
 backup_if_changed
 
 while true; do
@@ -598,7 +754,14 @@ show_post_install_notes() {
     echo -e "${TAB}${GATEWAY}${BGN}http://$(cat "${TOR_RTL_SERVICE_DIR}/hostname")${CL}"
   fi
   if [[ "$ENABLE_SCB_BACKUP" == "yes" ]]; then
-    echo -e "${TAB}4. Static channel backups are copied to ${BGN}${SCB_BACKUP_DIR}${CL}."
+    if [[ "$SCB_BACKUP_MODE" == "git" ]]; then
+      echo -e "${TAB}4. Static channel backups are versioned in ${BGN}${SCB_BACKUP_DIR}${CL} and pushed to ${BGN}${SCB_GIT_REMOTE_URL}${CL}."
+      if [[ "$SCB_GIT_AUTH_METHOD" == "ssh" && "$SCB_GIT_SSH_GENERATED" == "yes" ]]; then
+        echo -e "${TAB}5. Register the generated public key before the first SSH push: ${BGN}${SCB_GIT_SSH_KEY_PATH}.pub${CL}"
+      fi
+    else
+      echo -e "${TAB}4. Static channel backups are copied to ${BGN}${SCB_BACKUP_DIR}${CL}."
+    fi
   fi
 }
 
